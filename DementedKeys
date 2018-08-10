@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 # My script for managing my demented custom key mappings, primarily with xcape.
 # Control_L -> Ctrl+Tab (next tab)
 # Alt_L/_R  -> Escape
