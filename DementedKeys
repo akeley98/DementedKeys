@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+# My script for managing my demented custom key mappings, primarily with xcape.
+# Control_L -> Ctrl+Tab (next tab)
+# Alt_L/_R  -> Escape
+# In gaming mode, Control_L/Alt_L (but not Alt_R) mappings are disabled, and
+# remap left super to right super. SIGUSR1 to start gaming mode, SIGUSR2 to end.
+
+import os, signal, time
+TIMEOUT = "160" # Maximum modifier key press length (ms) for remapping.
+
+def fail(message):
+    os.execvp("notify-send", ["notify-send", "DementedKeys error: " + message])
+
+# Fork of an xcape process in debug mode (so it runs with the same pid
+# and not as a daemon).
+def launch_debug_xcape(args):
+    pid = os.fork()
+    if pid < 0:
+        fail(os.strerror("Fork failed"))
+    elif pid == 0:
+        os.execvp("xcape", ["xcape", "-d"] + list(args))
+    return pid
+
+# Define the mapping for the left and right hands.
+left_args = ["-t", TIMEOUT, "-e", "Control_L=Control_L|Prior;Alt_L=Escape"]
+right_args = ["-t", TIMEOUT, "-e", "Control_R=Control_L|Next;Alt_R=Escape"]
+
+# PIDs of xcape children. Set to None when killed.
+pid_left = launch_debug_xcape(left_args)
+pid_right = launch_debug_xcape(right_args)
+
+# In gaming mode, disable the super key -> overview shortcut by
+# mapping left super to right super. Super_R doesn't open the overview
+# but still works for super-key shortcuts. Also kill the left hand's
+# xcape.
+def start_gaming_mode(*ignored):
+    global pid_left
+    os.system("xmodmap -e 'keycode 133 = Super_R'")
+    if pid_left is not None:
+        os.kill(pid_left, signal.SIGINT)
+        pid_left = None
+    os.system("notify-send 'DementedKeys: start gaming mode.'")
+
+# Do the reverse operation as above.
+def end_gaming_mode(*ignored):
+    global pid_left
+    os.system("xmodmap -e 'keycode 133 = Super_L'")
+    if pid_left is None:
+        pid_left = launch_debug_xcape(left_args)
+    os.system("notify-send 'DementedKeys: end gaming mode.'")
+
+# Install signal handlers. Trust that Python signal handler doesn't
+# cause race conditions.
+import signal
+signal.signal(signal.SIGUSR1, start_gaming_mode)
+signal.signal(signal.SIGUSR2, end_gaming_mode)
+
+while 1:
+    try:
+        dead_pid, status = os.wait()
+        if dead_pid == pid_left or dead_pid == pid_right:
+            fail("child process died: %i" % dead_pid)
+    except OSError:
+        pass
+    except BaseException as e:
+        fail(str(e))
